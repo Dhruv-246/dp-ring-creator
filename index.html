@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DP Ring Creator — Kamya Yoga &amp; Wellness</title>
+<link rel="stylesheet" href="css/tokens.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--cream-50); font-family: var(--font-body); color: var(--text-body); }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { color: var(--brand-hover); }
+  @keyframes dcFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* --- Logo --- */
+  .logo { display: inline-flex; align-items: center; gap: 10px; }
+  .logo__word { font-family: var(--font-brand); font-weight: 600; color: var(--brand-strong); letter-spacing: -0.01em; }
+
+  /* --- Button --- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: var(--font-body); font-weight: 700; border: none; cursor: pointer;
+    border-radius: var(--radius-sm); transition: background .15s ease, transform .1s ease, box-shadow .15s ease;
+    white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn--primary { background: var(--brand); color: var(--grey-white); }
+  .btn--primary:hover { background: var(--brand-hover); }
+  .btn--secondary { background: var(--caramel-50); color: var(--brand-strong); border: 1px solid var(--border-default); }
+  .btn--secondary:hover { background: var(--cream-200); }
+  .btn--lg { height: 52px; padding: 0 28px; font-size: 15px; }
+  .btn--md { height: 44px; padding: 0 20px; font-size: 14px; }
+  .btn--full { width: 100%; }
+
+  .hero-img { display: block; }
+
+  body { overflow-x: hidden; }
+  [data-hero-row1], [data-hero-row2] { max-width: 100%; flex-wrap: nowrap; }
+
+  @media (max-width: 900px) {
+    .hero-wrap { flex-direction: column-reverse; text-align: center; }
+    .hero-wrap p { margin-left: auto; margin-right: auto; }
+    .hero-copy { align-items: center; }
+  }
+  @media (max-width: 720px) {
+    .hero-wrap { padding: 36px 24px 64px !important; gap: 36px !important; }
+    .hero-h1 { font-size: 34px !important; }
+    .section-pad { padding: 0 24px !important; }
+    .how-grid { grid-template-columns: 1fr !important; gap: 20px !important; }
+    .nav-pad, .footer-pad { padding-left: 24px !important; padding-right: 24px !important; }
+  }
+  @media (max-width: 480px) {
+    .hero-h1 { font-size: 30px !important; }
+    .footer-pad { flex-direction: column; gap: 12px; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<div style="background:var(--cream-50);min-height:100vh">
+
+  <!-- Nav -->
+  <div class="nav-pad" style="display:flex;align-items:center;justify-content:space-between;max-width:1200px;margin:0 auto;padding:24px 56px">
+    <span class="logo" style="font-size:24px">
+      <span class="logo__mark" data-logo-mark></span>
+      <span class="logo__word" style="font-size:22px">Kamya</span>
+    </span>
+  </div>
+
+  <!-- Hero -->
+  <div class="hero-wrap" style="max-width:1200px;margin:0 auto;padding:56px 56px 104px;display:flex;flex-wrap:wrap;align-items:center;gap:64px;position:relative">
+    <div class="hero-copy" style="flex:1 1 340px;min-width:0">
+      <h1 class="hero-h1" style="font-family:var(--font-display);font-weight:700;font-size:52px;line-height:1.08;letter-spacing:var(--tracking-tight);color:var(--text-heading);margin:0 0 20px">Create Your Wellness Profile Picture</h1>
+      <p style="font-family:var(--font-body);font-size:18px;line-height:1.5;color:var(--text-body);margin:0 0 36px;max-width:440px">Create your personalized profile picture instantly.</p>
+      <button class="btn btn--primary btn--lg" data-open-creator>Generate My Profile Picture</button>
+      <p style="font-family:var(--font-body);font-size:13px;color:var(--text-muted);margin:20px 0 0">Ready in Under 30 Seconds</p>
+    </div>
+    <div style="flex:1 1 auto;max-width:560px;display:flex;flex-direction:column;gap:28px;align-items:center">
+      <div data-hero-row1 style="display:flex;gap:24px;align-items:flex-end;justify-content:center"></div>
+      <div data-hero-row2 style="display:flex;gap:22px;align-items:center;justify-content:center"></div>
+    </div>
+  </div>
+
+  <!-- How it works -->
+  <div style="background:var(--cream-100);padding:96px 0">
+    <div class="section-pad" style="max-width:1080px;margin:0 auto;padding:0 56px">
+      <h2 style="text-align:center;font-family:var(--font-display);font-weight:700;font-size:26px;color:var(--text-heading);margin:0 0 56px">How it works</h2>
+      <div class="how-grid" data-how-grid style="display:grid;grid-template-columns:repeat(3,1fr);gap:40px"></div>
+    </div>
+  </div>
+
+  <!-- CTA band -->
+  <div style="background:var(--forest-900);padding:80px 56px;text-align:center">
+    <h2 style="font-family:var(--font-display);font-weight:700;font-size:30px;color:var(--cream-50);margin:0 0 14px">Ready to wear yours?</h2>
+    <p style="font-family:var(--font-body);font-size:15px;color:rgba(255,250,246,0.75);margin:0 0 32px">Create your personalized profile picture instantly.</p>
+    <button class="btn btn--primary btn--lg" data-open-creator>Generate My Profile Picture</button>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer-pad" style="display:flex;align-items:center;justify-content:space-between;max-width:1200px;margin:0 auto;padding:32px 56px">
+    <span class="logo" style="font-size:18px">
+      <span class="logo__mark" data-logo-mark></span>
+      <span class="logo__word" style="font-size:17px">Kamya</span>
+    </span>
+    <span style="font-family:var(--font-ui);font-size:12px;color:var(--text-muted)">Keep Breathing. Keep Smiling.</span>
+  </div>
+</div>
+
+<!-- Creator overlay mounts here -->
+<div data-creator-root></div>
+
+<script type="module" src="js/app.js?v=3"></script>
+</body>
+</html>

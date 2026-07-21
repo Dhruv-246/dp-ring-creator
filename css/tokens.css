@@ -1,0 +1,100 @@
+/* Kamya Yoga & Wellness — design tokens (fonts, colors, typography, spacing) */
+
+@import url('https://fonts.googleapis.com/css2?family=Reddit+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Poppins:wght@300;400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap');
+
+:root {
+  /* ---- Caramel / Terracotta (primary brand) ---- */
+  --caramel-50:  #FCF6F0;
+  --caramel-100: #F3E7DD;
+  --caramel-200: #E8CDB5;
+  --caramel-300: #DCB492;
+  --caramel-400: #CF986B;
+  --caramel-500: #C3804C;
+  --caramel-600: #9E5609;
+  --caramel-700: #7A5818;
+  --caramel-800: #6B3D05;
+  --caramel-900: #4A2A04;
+
+  /* ---- Cream surfaces ---- */
+  --cream-50:  #FFFAF6;
+  --cream-100: #FFF3EA;
+  --cream-200: #FFEBDB;
+  --cream-300: #F9F1EC;
+  --cream-400: #F3E7DD;
+
+  /* ---- Rose ---- */
+  --rose-50:  #FAEBEC;
+  --rose-100: #F5DBDD;
+  --rose-300: #E2929A;
+  --rose-500: #CF4856;
+
+  /* ---- Forest green ---- */
+  --forest-900: #084C2E;
+  --forest-800: #124D34;
+  --forest-700: #1E8057;
+  --forest-500: #2A9D6E;
+
+  /* ---- Success green ---- */
+  --green-50:  #EDFCF2;
+  --green-100: #D3F8DF;
+  --green-500: #16B364;
+  --green-600: #099250;
+
+  /* ---- Mint ---- */
+  --mint-300: #BFF6EC;
+  --mint-400: #9BF0E1;
+
+  /* ---- Status ---- */
+  --red-500:   #F04438;
+  --whatsapp:  #25D366;
+
+  /* ---- Neutrals ---- */
+  --grey-white: #FFFFFF;
+  --grey-100: #EAECEF;
+  --grey-200: #D9DCE1;
+  --grey-300: #C1C6CE;
+  --grey-400: #989DA5;
+  --grey-500: #757575;
+  --grey-700: #3D3D3D;
+  --grey-800: #1B2124;
+
+  /* ---- Semantic aliases ---- */
+  --brand:          var(--caramel-500);
+  --brand-hover:    var(--caramel-600);
+  --brand-strong:   var(--caramel-800);
+
+  --surface-card:    var(--grey-white);
+
+  --text-heading:   var(--caramel-800);
+  --text-strong:    var(--grey-800);
+  --text-body:      var(--grey-700);
+  --text-muted:     var(--grey-500);
+  --text-error:     var(--red-500);
+
+  --border-subtle:  var(--grey-100);
+  --border-default: var(--grey-200);
+  --border-strong:  var(--grey-300);
+  --border-brand:   var(--caramel-500);
+
+  --focus-ring: rgba(195, 128, 76, 0.35);
+
+  /* Families */
+  --font-display: "Reddit Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body:    "Reddit Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-brand:   "Poppins", "Reddit Sans", sans-serif;
+  --font-ui:      "DM Sans", "Reddit Sans", sans-serif;
+
+  /* Letter spacing */
+  --tracking-tight: -0.01em;
+
+  /* Radii */
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm:   0 1px 2px 0 rgba(0, 0, 0, 0.10);
+  --shadow-card: 0 2px 12px 0 rgba(107, 61, 5, 0.08);
+  --shadow-lg:   0 12px 32px 0 rgba(107, 61, 5, 0.14);
+}
