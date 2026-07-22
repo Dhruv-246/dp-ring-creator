@@ -46,6 +46,7 @@ class Creator {
     };
     // non-render refs / images
     this.uploadedImgEl = null;
+    this.originalImgEl = null;
     this.croppedImgEl = null;
     this.previewCanvasEl = null;
     this.fileInputEl = null;
@@ -81,7 +82,9 @@ class Creator {
   close = () => {
     document.body.style.overflow = '';
     this.uploadedImgEl = null;
+    this.originalImgEl = null;
     this.croppedImgEl = null;
+    this.crop = { rot90: 0, freeRot: 0, box: null };
     this.stopCameraStream();
     this.setState({ isCreatorOpen: false, step: 1, uploadedSrc: null, croppedReady: false, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 }, errorMsg: null, cameraOpen: false, cameraError: null });
   };
@@ -104,8 +107,9 @@ class Creator {
       const src = e.target.result;
       const img = new Image();
       img.onload = () => {
+        this.originalImgEl = img;                          // kept intact for re-cropping on "Back"
         this.uploadedImgEl = img;
-        this.crop = { rot90: 0, freeRot: 0, box: null }; // fresh crop for the new photo
+        this.crop = { rot90: 0, freeRot: 0, box: null };   // fresh crop for the new photo
         this.setState({ uploadedSrc: src, errorMsg: null, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 } });
       };
       img.onerror = () => this.setState({ errorMsg: "We couldn't read that photo — please try another." });
@@ -119,7 +123,7 @@ class Creator {
   onDragOver = (e) => { e.preventDefault(); if (!this.state.isDraggingFile) this.setState({ isDraggingFile: true }); };
   onDragLeave = (e) => { e.preventDefault(); this.setState({ isDraggingFile: false }); };
   triggerFilePicker = () => { if (this.fileInputEl) this.fileInputEl.click(); };
-  clearUpload = () => { this.uploadedImgEl = null; this.setState({ uploadedSrc: null, errorMsg: null }); };
+  clearUpload = () => { this.uploadedImgEl = null; this.originalImgEl = null; this.crop = { rot90: 0, freeRot: 0, box: null }; this.setState({ uploadedSrc: null, errorMsg: null }); };
 
   /* --- camera capture --- */
   attachStream() {
@@ -270,7 +274,7 @@ class Creator {
     return { x: clientX - r.left, y: clientY - r.top };
   }
   computeImgFit() {
-    const img = this.uploadedImgEl, c = this.crop;
+    const img = this.originalImgEl, c = this.crop;
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     const th = c.rot90 * Math.PI / 2 + c.freeRot;
     const cos = Math.abs(Math.cos(th)), sin = Math.abs(Math.sin(th));
@@ -297,12 +301,16 @@ class Creator {
     c.box = { s, x: (c.vw - s) / 2, y: (c.vh - s) / 2 };
     this.clampCropBox();
   }
+  // Coalesce move/resize/rotate redraws to one per animation frame.
+  scheduleCropDraw() {
+    if (this._cropRaf) return;
+    this._cropRaf = requestAnimationFrame(() => { this._cropRaf = null; this.drawCropStage(); this.positionCropBox(); });
+  }
   drawCropStage() {
-    const cv = this.cropCanvasEl, c = this.crop, img = this.uploadedImgEl;
+    const cv = this.cropCanvasEl, c = this.crop, img = this.originalImgEl;
     if (!cv || !img) return;
-    const dpr = 2;
-    cv.width = c.vw * dpr; cv.height = c.vh * dpr;
     const ctx = cv.getContext('2d');
+    const dpr = cv.width / c.vw || 2;             // backing store sized once in setupCropper
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, c.vw, c.vh);
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
@@ -312,6 +320,16 @@ class Creator {
     ctx.scale(c.fit, c.fit);
     ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
     ctx.restore();
+    // Dim everything outside the crop box (drawn on canvas — cheap, avoids a
+    // giant animated box-shadow that repaints the whole stage every frame).
+    const b = c.box;
+    if (b) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, 0, c.vw, b.y);
+      ctx.fillRect(0, b.y + b.s, c.vw, c.vh - (b.y + b.s));
+      ctx.fillRect(0, b.y, b.x, b.s);
+      ctx.fillRect(b.x + b.s, b.y, c.vw - (b.x + b.s), b.s);
+    }
   }
   positionCropBox() {
     const b = this.cropBoxEl, c = this.crop;
@@ -321,12 +339,15 @@ class Creator {
   }
   setupCropper() {
     const stage = this.root.querySelector('[data-cropper]');
-    if (!stage || !this.uploadedImgEl) return;
+    if (!stage || !this.originalImgEl) return;
     this.cropStageEl = stage;
     this.cropCanvasEl = stage.querySelector('[data-crop-canvas]');
     this.cropBoxEl = stage.querySelector('[data-crop-box]');
     const r = stage.getBoundingClientRect();
     this.crop.vw = r.width; this.crop.vh = r.height;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.cropCanvasEl.width = Math.round(r.width * dpr);   // size backing store ONCE
+    this.cropCanvasEl.height = Math.round(r.height * dpr);
     this.computeImgFit();
     if (!this.crop.box) this.resetCropBox(); else this.clampCropBox();
     this.drawCropStage();
@@ -364,12 +385,12 @@ class Creator {
       s = Math.max(56, s);
       c.box = { x, y, s };
     }
-    this.positionCropBox();
+    this.scheduleCropDraw();
   }
   onCropDocUp() { this.cropDrag = null; }
   rotate90 = () => {
     this.crop.rot90 = (this.crop.rot90 + 1) % 4;
-    this.computeImgFit(); this.clampCropBox(); this.drawCropStage(); this.positionCropBox();
+    this.computeImgFit(); this.clampCropBox(); this.scheduleCropDraw();
   };
   onCropTwoStart = (e) => {
     if (e.touches.length < 2) return;
@@ -382,12 +403,12 @@ class Creator {
     e.preventDefault();
     const a = Math.atan2(e.touches[1].clientY - e.touches[0].clientY, e.touches[1].clientX - e.touches[0].clientX);
     this.crop.freeRot = this.cropTwo.rot + (a - this.cropTwo.ang);
-    this.computeImgFit(); this.clampCropBox(); this.drawCropStage(); this.positionCropBox();
+    this.computeImgFit(); this.clampCropBox(); this.scheduleCropDraw();
   };
   onCropTwoEnd = (e) => { if (!e.touches || e.touches.length < 2) this.cropTwo = null; };
   // Bake the selected square region into the working image → step 2 (ring).
   confirmSquareCrop = () => {
-    const c = this.crop, img = this.uploadedImgEl;
+    const c = this.crop, img = this.originalImgEl;   // bake from the ORIGINAL; keep it for "Back"
     if (!c.box || !img) { this.setState({ step: 2 }); return; }
     const S = 1024;
     const out = document.createElement('canvas'); out.width = S; out.height = S;
@@ -440,6 +461,8 @@ class Creator {
   };
   resetCreator = () => {
     this.uploadedImgEl = null;
+    this.originalImgEl = null;
+    this.crop = { rot90: 0, freeRot: 0, box: null };
     this.setState({ step: 1, uploadedSrc: null, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 }, errorMsg: null, preset: DEFAULT_PRESET });
   };
 
@@ -476,7 +499,7 @@ class Creator {
             <div style="width:100%">
               <div data-cropper style="position:relative;width:100%;max-width:320px;height:360px;margin:0 auto 14px;background:#141414;border-radius:14px;overflow:hidden;touch-action:none;user-select:none">
                 <canvas data-crop-canvas style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
-                <div data-crop-box style="position:absolute;box-sizing:border-box;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);cursor:move;touch-action:none">
+                <div data-crop-box style="position:absolute;box-sizing:border-box;border:2px solid #fff;cursor:move;touch-action:none">
                   <div style="position:absolute;inset:0;pointer-events:none">
                     <div style="position:absolute;top:0;bottom:0;left:33.33%;width:1px;background:rgba(255,255,255,0.45)"></div>
                     <div style="position:absolute;top:0;bottom:0;left:66.66%;width:1px;background:rgba(255,255,255,0.45)"></div>
