@@ -55,11 +55,19 @@ class Creator {
     this.panStart = null;
     this.touchState = null;
     this._justOpened = false;
+    // step-1 crop tool state
+    this.crop = { rot90: 0, freeRot: 0, box: null };
+    this.cropDrag = null;
+    this.cropTwo = null;
 
     this.onWindowMouseMove = this.onWindowMouseMove.bind(this);
     this.onWindowMouseUp = this.onWindowMouseUp.bind(this);
+    this.onCropDocMove = this.onCropDocMove.bind(this);
+    this.onCropDocUp = this.onCropDocUp.bind(this);
     window.addEventListener('mousemove', this.onWindowMouseMove);
     window.addEventListener('mouseup', this.onWindowMouseUp);
+    window.addEventListener('pointermove', this.onCropDocMove);
+    window.addEventListener('pointerup', this.onCropDocUp);
   }
 
   setState(patch) {
@@ -97,6 +105,7 @@ class Creator {
       const img = new Image();
       img.onload = () => {
         this.uploadedImgEl = img;
+        this.crop = { rot90: 0, freeRot: 0, box: null }; // fresh crop for the new photo
         this.setState({ uploadedSrc: src, errorMsg: null, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 } });
       };
       img.onerror = () => this.setState({ errorMsg: "We couldn't read that photo — please try another." });
@@ -177,10 +186,9 @@ class Creator {
   clampScale = (s) => Math.min(4, Math.max(1, s));
   dispW = () => (this.adjustCanvasEl ? this.adjustCanvasEl.getBoundingClientRect().width : 320);
 
-  // Route live gesture re-renders: step 1 = square crop, step 2 = ring preview.
+  // Step-2 ring preview live re-render (step 1 uses the crop tool instead).
   adjustRender() {
-    if (this.state.step === 1) this.renderCropCanvas();
-    else this.renderPreviewCanvas();
+    if (this.state.step !== 1) this.renderPreviewCanvas();
   }
 
   // Mouse (desktop): drag to pan, wheel to zoom.
@@ -198,7 +206,14 @@ class Creator {
     this.state.adjust.scale = this.clampScale(this.state.adjust.scale - e.deltaY * 0.0015);
     this.adjustRender();
   };
-  resetCrop = () => { this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 }; this.adjustRender(); };
+  resetCrop = () => {
+    if (this.state.step === 1) {
+      this.crop.rot90 = 0; this.crop.freeRot = 0;
+      this.computeImgFit(); this.resetCropBox(); this.drawCropStage(); this.positionCropBox();
+    } else {
+      this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 }; this.adjustRender();
+    }
+  };
 
   // Touch: 1 finger pans, 2 fingers pinch-zoom AND twist-rotate together.
   touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
@@ -247,42 +262,151 @@ class Creator {
     });
   };
 
-  /* --- step 1: square crop (pan / pinch-zoom / two-finger rotate) --- */
-  renderCropCanvas = () => {
-    const cv = this.adjustCanvasEl;
-    if (!cv || !this.uploadedImgEl) return;
-    const size = 1024;
-    cv.width = size; cv.height = size;
-    const ctx = cv.getContext('2d');
-    ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, size, size);
-    const t = this.state.adjust;
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, size, size); ctx.clip();
-    ctx.translate(size / 2 + (t.ox || 0) * size, size / 2 + (t.oy || 0) * size);
-    ctx.rotate(t.rot || 0);
-    ctx.scale(t.scale || 1, t.scale || 1);
-    const img = this.uploadedImgEl;
+  /* ============ step 1: adjustable square crop frame ============
+     Full image on a dark stage; a movable + resizable square selection with
+     corner handles and a rule-of-thirds grid. 90° button + two-finger rotate. */
+  stageCoords(clientX, clientY) {
+    const r = this.cropStageEl.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
+  computeImgFit() {
+    const img = this.uploadedImgEl, c = this.crop;
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-    // cover the square's DIAGONAL so rotation never exposes empty corners.
-    const box = size * Math.SQRT2;
-    const { dw, dh } = iw / ih > 1 ? { dw: box * iw / ih, dh: box } : { dw: box, dh: box * ih / iw };
-    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    const th = c.rot90 * Math.PI / 2 + c.freeRot;
+    const cos = Math.abs(Math.cos(th)), sin = Math.abs(Math.sin(th));
+    const bw = iw * cos + ih * sin, bh = iw * sin + ih * cos; // rotated bounding box
+    c.fit = Math.min(c.vw / bw, c.vh / bh);                   // contain (whole image visible)
+    c.imgBoxW = bw * c.fit;
+    c.imgBoxH = bh * c.fit;
+  }
+  cropBounds() {
+    const c = this.crop;
+    const axMin = Math.max(0, (c.vw - c.imgBoxW) / 2), axMax = Math.min(c.vw, (c.vw + c.imgBoxW) / 2);
+    const ayMin = Math.max(0, (c.vh - c.imgBoxH) / 2), ayMax = Math.min(c.vh, (c.vh + c.imgBoxH) / 2);
+    return { axMin, axMax, ayMin, ayMax, maxS: Math.max(56, Math.min(axMax - axMin, ayMax - ayMin)) };
+  }
+  clampCropBox() {
+    const c = this.crop, b = this.cropBounds();
+    c.box.s = Math.max(56, Math.min(c.box.s, b.maxS));
+    c.box.x = Math.max(b.axMin, Math.min(c.box.x, b.axMax - c.box.s));
+    c.box.y = Math.max(b.ayMin, Math.min(c.box.y, b.ayMax - c.box.s));
+  }
+  resetCropBox() {
+    const c = this.crop, b = this.cropBounds();
+    const s = b.maxS * 0.9;
+    c.box = { s, x: (c.vw - s) / 2, y: (c.vh - s) / 2 };
+    this.clampCropBox();
+  }
+  drawCropStage() {
+    const cv = this.cropCanvasEl, c = this.crop, img = this.uploadedImgEl;
+    if (!cv || !img) return;
+    const dpr = 2;
+    cv.width = c.vw * dpr; cv.height = c.vh * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, c.vw, c.vh);
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    ctx.save();
+    ctx.translate(c.vw / 2, c.vh / 2);
+    ctx.rotate(c.rot90 * Math.PI / 2 + c.freeRot);
+    ctx.scale(c.fit, c.fit);
+    ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
     ctx.restore();
+  }
+  positionCropBox() {
+    const b = this.cropBoxEl, c = this.crop;
+    if (!b) return;
+    b.style.left = c.box.x + 'px'; b.style.top = c.box.y + 'px';
+    b.style.width = c.box.s + 'px'; b.style.height = c.box.s + 'px';
+  }
+  setupCropper() {
+    const stage = this.root.querySelector('[data-cropper]');
+    if (!stage || !this.uploadedImgEl) return;
+    this.cropStageEl = stage;
+    this.cropCanvasEl = stage.querySelector('[data-crop-canvas]');
+    this.cropBoxEl = stage.querySelector('[data-crop-box]');
+    const r = stage.getBoundingClientRect();
+    this.crop.vw = r.width; this.crop.vh = r.height;
+    this.computeImgFit();
+    if (!this.crop.box) this.resetCropBox(); else this.clampCropBox();
+    this.drawCropStage();
+    this.positionCropBox();
+    this.cropBoxEl.addEventListener('pointerdown', this.onCropBoxDown);
+    this.cropBoxEl.querySelectorAll('[data-h]').forEach((h) => h.addEventListener('pointerdown', this.onCropHandleDown));
+    stage.addEventListener('touchstart', this.onCropTwoStart, { passive: false });
+    stage.addEventListener('touchmove', this.onCropTwoMove, { passive: false });
+    stage.addEventListener('touchend', this.onCropTwoEnd);
+    stage.addEventListener('touchcancel', this.onCropTwoEnd);
+  }
+  onCropBoxDown = (e) => {
+    if (e.target.hasAttribute('data-h') || this.cropTwo) return;
+    e.preventDefault();
+    this.cropDrag = { mode: 'move', px: e.clientX, py: e.clientY, x: this.crop.box.x, y: this.crop.box.y };
   };
-  // Bake the square crop into the working image, then hand off to step 2 (ring).
+  onCropHandleDown = (e) => {
+    if (this.cropTwo) return;
+    e.preventDefault(); e.stopPropagation();
+    this.cropDrag = { mode: 'resize', h: e.target.getAttribute('data-h'), box: { ...this.crop.box } };
+  };
+  onCropDocMove(e) {
+    if (!this.cropDrag || this.cropTwo || this.state.step !== 1) return;
+    const c = this.crop, d = this.cropDrag, b = this.cropBounds();
+    if (d.mode === 'move') {
+      c.box.x = Math.max(b.axMin, Math.min(d.x + (e.clientX - d.px), b.axMax - c.box.s));
+      c.box.y = Math.max(b.ayMin, Math.min(d.y + (e.clientY - d.py), b.ayMax - c.box.s));
+    } else {
+      const p = this.stageCoords(e.clientX, e.clientY), o = d.box;
+      let x = o.x, y = o.y, s = o.s;
+      if (d.h === 'br') { s = Math.min(Math.max(p.x - o.x, p.y - o.y), b.axMax - o.x, b.ayMax - o.y); }
+      else if (d.h === 'tl') { const ax = o.x + o.s, ay = o.y + o.s; s = Math.min(Math.max(ax - p.x, ay - p.y), ax - b.axMin, ay - b.ayMin); x = ax - s; y = ay - s; }
+      else if (d.h === 'tr') { const ay = o.y + o.s; s = Math.min(Math.max(p.x - o.x, ay - p.y), b.axMax - o.x, ay - b.ayMin); y = ay - s; }
+      else if (d.h === 'bl') { const ax = o.x + o.s; s = Math.min(Math.max(ax - p.x, p.y - o.y), ax - b.axMin, b.ayMax - o.y); x = ax - s; }
+      s = Math.max(56, s);
+      c.box = { x, y, s };
+    }
+    this.positionCropBox();
+  }
+  onCropDocUp() { this.cropDrag = null; }
+  rotate90 = () => {
+    this.crop.rot90 = (this.crop.rot90 + 1) % 4;
+    this.computeImgFit(); this.clampCropBox(); this.drawCropStage(); this.positionCropBox();
+  };
+  onCropTwoStart = (e) => {
+    if (e.touches.length < 2) return;
+    e.preventDefault();
+    this.cropDrag = null;
+    this.cropTwo = { ang: Math.atan2(e.touches[1].clientY - e.touches[0].clientY, e.touches[1].clientX - e.touches[0].clientX), rot: this.crop.freeRot };
+  };
+  onCropTwoMove = (e) => {
+    if (!this.cropTwo || e.touches.length < 2) return;
+    e.preventDefault();
+    const a = Math.atan2(e.touches[1].clientY - e.touches[0].clientY, e.touches[1].clientX - e.touches[0].clientX);
+    this.crop.freeRot = this.cropTwo.rot + (a - this.cropTwo.ang);
+    this.computeImgFit(); this.clampCropBox(); this.drawCropStage(); this.positionCropBox();
+  };
+  onCropTwoEnd = (e) => { if (!e.touches || e.touches.length < 2) this.cropTwo = null; };
+  // Bake the selected square region into the working image → step 2 (ring).
   confirmSquareCrop = () => {
-    const cv = this.adjustCanvasEl;
-    if (!cv) { this.setState({ step: 2 }); return; }
-    const dataUrl = cv.toDataURL('image/png');
-    const img = new Image();
-    img.onload = () => {
-      this.uploadedImgEl = img;                            // step 2 frames this square in the ring
-      this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 }; // reset for the ring step
+    const c = this.crop, img = this.uploadedImgEl;
+    if (!c.box || !img) { this.setState({ step: 2 }); return; }
+    const S = 1024;
+    const out = document.createElement('canvas'); out.width = S; out.height = S;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, S, S);
+    ctx.scale(S / c.box.s, S / c.box.s);   // crop box → full output
+    ctx.translate(-c.box.x, -c.box.y);
+    ctx.translate(c.vw / 2, c.vh / 2);     // replicate the stage's image transform
+    ctx.rotate(c.rot90 * Math.PI / 2 + c.freeRot);
+    ctx.scale(c.fit, c.fit);
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+    const cropped = new Image();
+    cropped.onload = () => {
+      this.uploadedImgEl = cropped;                        // step 2 frames this square in the ring
+      this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 };
       this.setState({ step: 2 });
     };
-    img.src = dataUrl;
+    cropped.src = out.toDataURL('image/png');
   };
 
   /* --- share / download --- */
@@ -336,7 +460,7 @@ class Creator {
       stepHtml = `
         <div style="width:100%;text-align:center">
           <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">${(s.uploadedSrc && !s.cameraOpen) ? 'Crop your photo' : 'Upload your photo'}</h2>
-          <p style="font-family:var(--font-body);font-size:15px;color:var(--text-muted);margin:0 0 ${(s.uploadedSrc && !s.cameraOpen) ? '18px' : '32px'}">${(s.uploadedSrc && !s.cameraOpen) ? 'Drag to move · pinch to zoom &amp; rotate' : 'A clear, front-facing photo works best.'}</p>
+          <p style="font-family:var(--font-body);font-size:15px;color:var(--text-muted);margin:0 0 ${(s.uploadedSrc && !s.cameraOpen) ? '18px' : '32px'}">${(s.uploadedSrc && !s.cameraOpen) ? 'Drag &amp; resize the frame · two fingers to rotate' : 'A clear, front-facing photo works best.'}</p>
           ${s.cameraOpen ? `
             <div style="display:flex;flex-direction:column;align-items:center;gap:18px">
               <div style="position:relative;width:100%;max-width:320px;aspect-ratio:1/1;border-radius:var(--radius-lg);overflow:hidden;background:#111">
@@ -350,12 +474,32 @@ class Creator {
             </div>
           ` : s.uploadedSrc ? `
             <div style="width:100%">
-              <div style="background:var(--cream-100);border-radius:var(--radius-lg);padding:14px;margin:0 auto 12px;max-width:320px">
-                <canvas data-adjust width="1024" height="1024" style="display:block;width:100%;height:auto;aspect-ratio:1/1;border-radius:12px;touch-action:none;cursor:grab"></canvas>
+              <div data-cropper style="position:relative;width:100%;max-width:320px;height:360px;margin:0 auto 14px;background:#141414;border-radius:14px;overflow:hidden;touch-action:none;user-select:none">
+                <canvas data-crop-canvas style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+                <div data-crop-box style="position:absolute;box-sizing:border-box;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);cursor:move;touch-action:none">
+                  <div style="position:absolute;inset:0;pointer-events:none">
+                    <div style="position:absolute;top:0;bottom:0;left:33.33%;width:1px;background:rgba(255,255,255,0.45)"></div>
+                    <div style="position:absolute;top:0;bottom:0;left:66.66%;width:1px;background:rgba(255,255,255,0.45)"></div>
+                    <div style="position:absolute;left:0;right:0;top:33.33%;height:1px;background:rgba(255,255,255,0.45)"></div>
+                    <div style="position:absolute;left:0;right:0;top:66.66%;height:1px;background:rgba(255,255,255,0.45)"></div>
+                  </div>
+                  <span data-h="tl" style="position:absolute;left:-3px;top:-3px;width:22px;height:22px;border-left:3px solid #fff;border-top:3px solid #fff;border-top-left-radius:4px;cursor:nwse-resize;touch-action:none"></span>
+                  <span data-h="tr" style="position:absolute;right:-3px;top:-3px;width:22px;height:22px;border-right:3px solid #fff;border-top:3px solid #fff;border-top-right-radius:4px;cursor:nesw-resize;touch-action:none"></span>
+                  <span data-h="bl" style="position:absolute;left:-3px;bottom:-3px;width:22px;height:22px;border-left:3px solid #fff;border-bottom:3px solid #fff;border-bottom-left-radius:4px;cursor:nesw-resize;touch-action:none"></span>
+                  <span data-h="br" style="position:absolute;right:-3px;bottom:-3px;width:22px;height:22px;border-right:3px solid #fff;border-bottom:3px solid #fff;border-bottom-right-radius:4px;cursor:nwse-resize;touch-action:none"></span>
+                </div>
               </div>
-              <button data-act="resetCrop" style="display:block;margin:0 auto 18px;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset</button>
+              <div style="display:flex;justify-content:center;margin-bottom:16px">
+                <button data-act="rotate90" class="btn btn--secondary btn--md" aria-label="Rotate 90 degrees" style="display:inline-flex;align-items:center;gap:8px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-2.3 5.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 5v5h-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  Rotate
+                </button>
+              </div>
               <button class="btn btn--primary btn--lg btn--full" data-act="confirmSquareCrop">Continue</button>
-              <button data-act="clearUpload" style="display:block;margin:14px auto 0;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Choose a different photo</button>
+              <div style="display:flex;justify-content:center;gap:22px;margin-top:14px">
+                <button data-act="resetCrop" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset</button>
+                <button data-act="clearUpload" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Choose a different photo</button>
+              </div>
             </div>
           ` : `
             <div data-dropzone style="padding:44px 28px;border-radius:var(--radius-lg);border:2px dashed ${dropBorder};background:${dropBg};display:flex;flex-direction:column;align-items:center;gap:14px;transition:border-color .15s ease, background .15s ease">
@@ -448,7 +592,7 @@ class Creator {
     const actions = {
       close: this.close, goBack: this.goBack, goNext: this.goNext,
       clearUpload: this.clearUpload, triggerFilePicker: this.triggerFilePicker,
-      resetCrop: this.resetCrop, confirmSquareCrop: this.confirmSquareCrop,
+      resetCrop: this.resetCrop, confirmSquareCrop: this.confirmSquareCrop, rotate90: this.rotate90,
       shareOnWhatsApp: this.shareOnWhatsApp, downloadPng: this.downloadPng, resetCreator: this.resetCreator,
       openCamera: this.openCamera, stopCamera: this.stopCamera, capturePhoto: this.capturePhoto, flipCamera: this.flipCamera,
     };
@@ -495,7 +639,8 @@ class Creator {
       Ring.renderKamyaRing(el, { size: 120, styleKey: el.getAttribute('data-swatch'), img: null, silhouette: { bg: '#F3E7DD', fg: '#DCB492', bust: 1 } });
     });
 
-    this.adjustRender();
+    if (this.state.step === 1 && this.state.uploadedSrc && !this.state.cameraOpen) this.setupCropper();
+    else this.adjustRender();
   }
 }
 
