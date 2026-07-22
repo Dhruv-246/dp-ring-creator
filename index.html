@@ -64,12 +64,12 @@
   .hero-dp img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 
   @media (max-width: 900px) {
-    .hero-wrap { flex-direction: column; text-align: center; gap: 40px !important; }
+    .hero-wrap { flex-direction: column; text-align: center; gap: 24px !important; }
     .hero-wrap p { margin-left: auto; margin-right: auto; }
-    .hero-copy { display: flex; flex-direction: column; align-items: center; }
-    .hero-stage { flex: 0 0 auto; width: 320px; min-height: 0; }
-    .hero-phone { width: 272px; }
-    .hero-dp { width: 108px; height: 108px; left: 0; bottom: 12%; }
+    .hero-copy { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto !important; }
+    .hero-stage { flex: 0 0 auto !important; width: 300px; min-height: 0; }
+    .hero-phone { width: 288px; max-width: 88%; }
+    .hero-dp { display: none; }   /* mobile: phone frame only, no floating DP */
   }
   @media (max-width: 720px) {
     .hero-wrap { padding: 32px 24px 56px !important; gap: 34px !important; }
@@ -81,8 +81,7 @@
   @media (max-width: 480px) {
     .hero-h1 { font-size: 30px !important; }
     .hero-stage { width: 300px; min-height: 0; }
-    .hero-phone { width: 248px; }
-    .hero-dp { width: 94px; height: 94px; }
+    .hero-phone { width: 270px; }
     .footer-pad { flex-direction: column; gap: 12px; text-align: center; }
   }
 </style>
@@ -142,6 +141,6 @@
 <!-- Creator overlay mounts here -->
 <div data-creator-root></div>
 
-<script type="module" src="js/app.js?v=6"></script>
+<script type="module" src="js/app.js?v=7"></script>
 </body>
 </html>

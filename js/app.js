@@ -345,8 +345,8 @@ class Creator {
         <div style="width:100%;text-align:center">
           <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">Frame your photo</h2>
           <p style="font-family:var(--font-body);font-size:14px;color:var(--text-muted);margin:0 0 20px">Drag to move · pinch to zoom &amp; rotate</p>
-          <div style="background:var(--cream-100);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px;display:inline-flex">
-            <canvas data-preview data-adjust width="1024" height="1024" style="display:block;width:300px;height:300px;max-width:76vw;touch-action:none;cursor:grab"></canvas>
+          <div style="background:var(--cream-100);border-radius:var(--radius-lg);padding:14px;margin:0 auto 14px;max-width:320px">
+            <canvas data-preview data-adjust width="1024" height="1024" style="display:block;width:100%;height:auto;aspect-ratio:1/1;border-radius:12px;touch-action:none;cursor:grab"></canvas>
           </div>
           <button data-act="resetCrop" style="display:block;margin:0 auto 22px;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset</button>
           <div style="font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--text-strong);margin:0 0 12px">Choose your ring</div>
