@@ -662,18 +662,7 @@ function buildHowItWorks() {
     </div>`).join('');
 }
 
-function buildLogoMarks() {
-  const svg = `<svg viewBox="0 0 32 32" width="1.15em" height="1.15em" fill="none" aria-hidden="true">
-    <path d="M16 5c2.6 2.2 4 5 4 8 0 3.2-1.7 6-4 8-2.3-2-4-4.8-4-8 0-3 1.4-5.8 4-8z" fill="var(--caramel-500)"/>
-    <path d="M8 12c3 .3 5.4 1.7 7 4 1.3 1.9 1.8 4.2 1.5 6.6-3-.3-5.4-1.7-7-4C8.2 16.7 7.7 14.4 8 12z" fill="var(--caramel-400)"/>
-    <path d="M24 12c-3 .3-5.4 1.7-7 4-1.3 1.9-1.8 4.2-1.5 6.6 3-.3 5.4-1.7 7-4 1.3-1.9 1.8-4.2 1.5-6.6z" fill="var(--caramel-300)"/>
-    <circle cx="16" cy="18" r="2.2" fill="var(--caramel-800)"/>
-  </svg>`;
-  document.querySelectorAll('[data-logo-mark]').forEach((el) => { el.innerHTML = svg; el.style.display = 'inline-flex'; });
-}
-
 function init() {
-  buildLogoMarks();
   buildHowItWorks();
   const creator = new Creator(document.querySelector('[data-creator-root]'));
   document.querySelectorAll('[data-open-creator]').forEach((b) => b.addEventListener('click', creator.open));
