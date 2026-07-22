@@ -33,18 +33,46 @@
   .btn--md { height: 44px; padding: 0 20px; font-size: 14px; }
   .btn--full { width: 100%; }
 
-  .hero-img { display: block; }
-
   body { overflow-x: hidden; }
-  [data-hero-row1], [data-hero-row2] { max-width: 100%; flex-wrap: nowrap; }
+
+  /* --- Hero visual --- */
+  .hero-stage {
+    position: relative; flex: 1 1 380px; min-width: 0;
+    width: 380px; max-width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    align-self: stretch; min-height: 460px;
+  }
+  .hero-blob {
+    position: absolute; z-index: 0; width: 84%; aspect-ratio: 1 / 1; border-radius: 50%;
+    background:
+      radial-gradient(circle at 34% 30%, rgba(197,122,58,0.40), transparent 62%),
+      radial-gradient(circle at 72% 74%, rgba(74,110,60,0.34), transparent 60%);
+    filter: blur(46px);
+  }
+  .hero-phone {
+    position: relative; z-index: 1; width: 330px; max-width: 84%; height: auto; display: block;
+    filter: drop-shadow(0 26px 48px rgba(60,40,15,0.22));
+    -webkit-mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
+            mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
+  }
+  .hero-dp {
+    position: absolute; z-index: 2; left: 4%; bottom: 14%;
+    width: 130px; height: 130px; border-radius: 50%;
+    background: var(--grey-white); padding: 6px;
+    box-shadow: 0 16px 32px rgba(60,40,15,0.20);
+  }
+  .hero-dp img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 
   @media (max-width: 900px) {
-    .hero-wrap { flex-direction: column-reverse; text-align: center; }
+    .hero-wrap { flex-direction: column; text-align: center; gap: 40px !important; }
     .hero-wrap p { margin-left: auto; margin-right: auto; }
-    .hero-copy { align-items: center; }
+    .hero-copy { display: flex; flex-direction: column; align-items: center; }
+    .hero-stage { flex: 0 0 auto; width: 320px; min-height: 0; }
+    .hero-phone { width: 272px; }
+    .hero-dp { width: 108px; height: 108px; left: 0; bottom: 12%; }
   }
   @media (max-width: 720px) {
-    .hero-wrap { padding: 36px 24px 64px !important; gap: 36px !important; }
+    .hero-wrap { padding: 32px 24px 56px !important; gap: 34px !important; }
     .hero-h1 { font-size: 34px !important; }
     .section-pad { padding: 0 24px !important; }
     .how-grid { grid-template-columns: 1fr !important; gap: 20px !important; }
@@ -52,6 +80,9 @@
   }
   @media (max-width: 480px) {
     .hero-h1 { font-size: 30px !important; }
+    .hero-stage { width: 300px; min-height: 0; }
+    .hero-phone { width: 248px; }
+    .hero-dp { width: 94px; height: 94px; }
     .footer-pad { flex-direction: column; gap: 12px; text-align: center; }
   }
 </style>
@@ -76,9 +107,10 @@
       <button class="btn btn--primary btn--lg" data-open-creator>Generate My Profile Picture</button>
       <p style="font-family:var(--font-body);font-size:13px;color:var(--text-muted);margin:20px 0 0">Ready in Under 30 Seconds</p>
     </div>
-    <div style="flex:1 1 auto;max-width:560px;display:flex;flex-direction:column;gap:28px;align-items:center">
-      <div data-hero-row1 style="display:flex;gap:24px;align-items:flex-end;justify-content:center"></div>
-      <div data-hero-row2 style="display:flex;gap:22px;align-items:center;justify-content:center"></div>
+    <div class="hero-stage">
+      <div class="hero-blob"></div>
+      <img class="hero-phone" src="assets/mobile-frame.png" alt="Your profile picture live on WhatsApp">
+      <div class="hero-dp"><img src="assets/hero-kamya-yoga.png" alt="Wellness ring profile picture"></div>
     </div>
   </div>
 
@@ -110,6 +142,6 @@
 <!-- Creator overlay mounts here -->
 <div data-creator-root></div>
 
-<script type="module" src="js/app.js?v=3"></script>
+<script type="module" src="js/app.js?v=6"></script>
 </body>
 </html>

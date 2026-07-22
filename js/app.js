@@ -1,12 +1,11 @@
-import * as Ring from './ring-render.js?v=2';
+import * as Ring from './ring-render.js?v=3';
 
 /* ---------------- static config (ported from the design) ---------------- */
 
 const STEP_META = [
   { n: 1, label: 'Upload' },
-  { n: 2, label: 'Crop' },
-  { n: 3, label: 'Ring' },
-  { n: 4, label: 'Done' },
+  { n: 2, label: 'Style' },
+  { n: 3, label: 'Done' },
 ];
 
 const HOW_IT_WORKS = [
@@ -18,18 +17,6 @@ const HOW_IT_WORKS = [
 const STYLE_ORDER = [
   { key: 'classic', label: 'Classic' },
   { key: 'bold', label: 'Bold' },
-];
-
-// Hero images. Each slot uses the real design photo when present in assets/,
-// and falls back to a generated on-brand ring avatar if the file is missing.
-const HERO_ROW1 = [
-  { size: 240, img: 'assets/hero-kamya-praying2.png', preset: 'classic', bg: '#FFF3EA', fg: '#DCB492', bust: 0 },
-  { size: 270, img: 'assets/hero-kamya-yoga.png', preset: 'bold', bg: '#BFF6EC', fg: '#1E8057', bust: 1 },
-];
-const HERO_ROW2 = [
-  { size: 170, img: 'assets/hero-man-blue.png', preset: 'bold', bg: '#EAF1FF', fg: '#6E86C4', bust: 1 },
-  { size: 190, img: 'assets/hero-man-green-cutout.png', preset: 'classic', bg: '#FFEBDB', fg: '#2A9D6E', bust: 0 },
-  { size: 170, img: 'assets/hero-woman-orange.png', preset: 'bold', bg: '#FAEBEC', fg: '#E2929A', bust: 2 },
 ];
 
 const HOW_ICONS = {
@@ -49,11 +36,13 @@ class Creator {
       isCreatorOpen: false,
       step: 1,
       uploadedSrc: null,
-      crop: { x: 0, y: 0, scale: 1 },
+      adjust: { ox: 0, oy: 0, scale: 1, rot: 0 },
       isDraggingFile: false,
-      croppedReady: false,
       preset: DEFAULT_PRESET,
       errorMsg: null,
+      cameraOpen: false,
+      cameraError: null,
+      facingMode: 'user',
     };
     // non-render refs / images
     this.uploadedImgEl = null;
@@ -61,6 +50,8 @@ class Creator {
     this.previewCanvasEl = null;
     this.fileInputEl = null;
     this.cropImgEl = null;
+    this.stream = null;
+    this.videoEl = null;
     this.panStart = null;
     this.touchState = null;
     this._justOpened = false;
@@ -83,9 +74,10 @@ class Creator {
     document.body.style.overflow = '';
     this.uploadedImgEl = null;
     this.croppedImgEl = null;
-    this.setState({ isCreatorOpen: false, step: 1, uploadedSrc: null, croppedReady: false, crop: { x: 0, y: 0, scale: 1 }, errorMsg: null });
+    this.stopCameraStream();
+    this.setState({ isCreatorOpen: false, step: 1, uploadedSrc: null, croppedReady: false, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 }, errorMsg: null, cameraOpen: false, cameraError: null });
   };
-  goNext = () => this.setState((s) => ({ step: Math.min(4, s.step + 1) }));
+  goNext = () => this.setState((s) => ({ step: Math.min(3, s.step + 1) }));
   goBack = () => this.setState((s) => ({ step: Math.max(1, s.step - 1) }));
 
   /* --- upload --- */
@@ -105,7 +97,7 @@ class Creator {
       const img = new Image();
       img.onload = () => {
         this.uploadedImgEl = img;
-        this.setState({ uploadedSrc: src, errorMsg: null, crop: { x: 0, y: 0, scale: 1 } });
+        this.setState({ uploadedSrc: src, errorMsg: null, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 } });
       };
       img.onerror = () => this.setState({ errorMsg: "We couldn't read that photo — please try another." });
       img.src = src;
@@ -120,68 +112,119 @@ class Creator {
   triggerFilePicker = () => { if (this.fileInputEl) this.fileInputEl.click(); };
   clearUpload = () => { this.uploadedImgEl = null; this.setState({ uploadedSrc: null, errorMsg: null }); };
 
-  /* --- crop --- */
-  onCropPointerDown = (e) => { this.panStart = { x: e.clientX, y: e.clientY, cx: this.state.crop.x, cy: this.state.crop.y }; };
-  applyCropTransform() {
-    if (!this.cropImgEl) return;
-    const { x, y, scale } = this.state.crop;
-    this.cropImgEl.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+  /* --- camera capture --- */
+  attachStream() {
+    if (this.videoEl && this.stream) {
+      this.videoEl.srcObject = this.stream;
+      this.videoEl.play().catch(() => {});
+    }
   }
+  stopCameraStream() {
+    if (this.stream) {
+      this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null;
+    }
+    if (this.videoEl) this.videoEl.srcObject = null;
+  }
+  openCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      this.setState({ cameraError: 'Camera isn’t available on this device or browser. Try “Choose a Photo” instead.' });
+      return;
+    }
+    this.stopCameraStream();
+    this.setState({ cameraError: null, cameraOpen: true, errorMsg: null });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: this.state.facingMode }, audio: false });
+      if (!this.state.cameraOpen) { stream.getTracks().forEach((t) => t.stop()); return; } // cancelled while awaiting
+      this.stream = stream;
+      this.attachStream();
+    } catch (e) {
+      const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      this.setState({
+        cameraOpen: false,
+        cameraError: denied
+          ? 'Camera access was blocked. Allow camera permission, or use “Choose a Photo”.'
+          : 'We couldn’t start the camera. Use “Choose a Photo” instead.',
+      });
+    }
+  };
+  stopCamera = () => { this.stopCameraStream(); this.setState({ cameraOpen: false, cameraError: null }); };
+  flipCamera = () => {
+    const next = this.state.facingMode === 'user' ? 'environment' : 'user';
+    this.state.facingMode = next;
+    this.openCamera();
+  };
+  capturePhoto = () => {
+    const v = this.videoEl;
+    if (!v || !v.videoWidth || !v.videoHeight) return;
+    const w = v.videoWidth, h = v.videoHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    // Mirror the front-camera capture so the saved photo matches the on-screen preview.
+    if (this.state.facingMode === 'user') { ctx.translate(w, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(v, 0, 0, w, h);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], 'camera-photo.png', { type: 'image/png' });
+      this.stopCameraStream();
+      this.state.cameraOpen = false; // handleFile will trigger the re-render with the preview
+      this.handleFile(file);
+    }, 'image/png');
+  };
+
+  /* --- live adjust inside the ring: pan / pinch-zoom / two-finger rotate --- */
+  clampScale = (s) => Math.min(4, Math.max(1, s));
+  dispW = () => (this.previewCanvasEl ? this.previewCanvasEl.getBoundingClientRect().width : 320);
+
+  // Mouse (desktop): drag to pan, wheel to zoom.
+  onCropPointerDown = (e) => { this.panStart = { x: e.clientX, y: e.clientY, ox: this.state.adjust.ox, oy: this.state.adjust.oy }; };
   onWindowMouseMove(e) {
     if (!this.panStart) return;
-    const dx = e.clientX - this.panStart.x, dy = e.clientY - this.panStart.y;
-    this.state.crop = { ...this.state.crop, x: this.panStart.cx + dx, y: this.panStart.cy + dy };
-    this.applyCropTransform();
+    const w = this.dispW();
+    this.state.adjust.ox = this.panStart.ox + (e.clientX - this.panStart.x) / w;
+    this.state.adjust.oy = this.panStart.oy + (e.clientY - this.panStart.y) / w;
+    this.renderPreviewCanvas();
   }
   onWindowMouseUp() { this.panStart = null; }
-  resetCrop = () => { this.state.crop = { x: 0, y: 0, scale: 1 }; this.applyCropTransform(); };
   onCropWheel = (e) => {
     e.preventDefault();
-    const delta = -e.deltaY * 0.0015;
-    this.state.crop = { ...this.state.crop, scale: Math.min(3, Math.max(1, this.state.crop.scale + delta)) };
-    this.applyCropTransform();
+    this.state.adjust.scale = this.clampScale(this.state.adjust.scale - e.deltaY * 0.0015);
+    this.renderPreviewCanvas();
   };
+  resetCrop = () => { this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 }; this.renderPreviewCanvas(); };
+
+  // Touch: 1 finger pans, 2 fingers pinch-zoom AND twist-rotate together.
   touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  touchAngle = (t) => Math.atan2(t[1].clientY - t[0].clientY, t[1].clientX - t[0].clientX);
   onCropTouchStart = (e) => {
-    if (e.touches.length === 2) this.touchState = { mode: 'pinch', dist: this.touchDist(e.touches), scale: this.state.crop.scale };
-    else if (e.touches.length === 1) { const t = e.touches[0]; this.touchState = { mode: 'pan', x: t.clientX, y: t.clientY, cx: this.state.crop.x, cy: this.state.crop.y }; }
+    const a = this.state.adjust;
+    if (e.touches.length >= 2) this.touchState = { mode: 'multi', dist: this.touchDist(e.touches), ang: this.touchAngle(e.touches), scale: a.scale, rot: a.rot };
+    else if (e.touches.length === 1) { const t = e.touches[0]; this.touchState = { mode: 'pan', x: t.clientX, y: t.clientY, ox: a.ox, oy: a.oy }; }
   };
   onCropTouchMove = (e) => {
     e.preventDefault();
     if (!this.touchState) return;
-    if (this.touchState.mode === 'pinch' && e.touches.length === 2) {
-      const factor = this.touchDist(e.touches) / this.touchState.dist;
-      const newScale = Math.min(3, Math.max(1, this.touchState.scale * factor));
-      this.state.crop = { ...this.state.crop, scale: newScale };
-      this.applyCropTransform();
+    const a = this.state.adjust;
+    if (this.touchState.mode === 'multi' && e.touches.length >= 2) {
+      a.scale = this.clampScale(this.touchState.scale * (this.touchDist(e.touches) / this.touchState.dist));
+      a.rot = this.touchState.rot + (this.touchAngle(e.touches) - this.touchState.ang);
+      this.renderPreviewCanvas();
     } else if (this.touchState.mode === 'pan' && e.touches.length === 1) {
-      const t = e.touches[0];
-      const dx = t.clientX - this.touchState.x, dy = t.clientY - this.touchState.y;
-      this.state.crop = { ...this.state.crop, x: this.touchState.cx + dx, y: this.touchState.cy + dy };
-      this.applyCropTransform();
+      const t = e.touches[0], w = this.dispW();
+      a.ox = this.touchState.ox + (t.clientX - this.touchState.x) / w;
+      a.oy = this.touchState.oy + (t.clientY - this.touchState.y) / w;
+      this.renderPreviewCanvas();
     }
   };
-  onCropTouchEnd = () => { this.touchState = null; };
-  confirmCrop = () => {
-    if (!this.uploadedImgEl) return;
-    const SIZE = 800, VIEW = 270, ratio = SIZE / VIEW;
-    const canvas = document.createElement('canvas');
-    canvas.width = SIZE; canvas.height = SIZE;
-    const ctx = canvas.getContext('2d');
-    const { x, y, scale } = this.state.crop;
-    ctx.save();
-    ctx.translate(SIZE / 2, SIZE / 2);
-    ctx.translate(x * ratio, y * ratio);
-    ctx.scale(scale, scale);
-    const iw = this.uploadedImgEl.naturalWidth, ih = this.uploadedImgEl.naturalHeight;
-    let dw, dh;
-    if (iw / ih > 1) { dh = SIZE; dw = (dh * iw) / ih; } else { dw = SIZE; dh = (dw * ih) / iw; }
-    ctx.drawImage(this.uploadedImgEl, -dw / 2, -dh / 2, dw, dh);
-    ctx.restore();
-    const dataUrl = canvas.toDataURL('image/png');
-    const img = new Image();
-    img.onload = () => { this.croppedImgEl = img; this.setState({ croppedReady: true, step: 3 }); };
-    img.src = dataUrl;
+  onCropTouchEnd = (e) => {
+    // One finger lifted mid-gesture → continue panning with the finger that remains.
+    if (e.touches && e.touches.length === 1) {
+      const t = e.touches[0], a = this.state.adjust;
+      this.touchState = { mode: 'pan', x: t.clientX, y: t.clientY, ox: a.ox, oy: a.oy };
+    } else {
+      this.touchState = null;
+    }
   };
 
   /* --- ring choice --- */
@@ -192,7 +235,8 @@ class Creator {
     Ring.renderKamyaRing(this.previewCanvasEl, {
       size: 1024,
       styleKey: this.state.preset,
-      img: this.croppedImgEl || null,
+      img: this.uploadedImgEl || null,
+      transform: this.state.adjust,
       silhouette: { bg: '#F3E7DD', fg: '#DCB492', bust: 1 },
     });
   };
@@ -228,8 +272,7 @@ class Creator {
   };
   resetCreator = () => {
     this.uploadedImgEl = null;
-    this.croppedImgEl = null;
-    this.setState({ step: 1, uploadedSrc: null, croppedReady: false, crop: { x: 0, y: 0, scale: 1 }, errorMsg: null, preset: DEFAULT_PRESET });
+    this.setState({ step: 1, uploadedSrc: null, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 }, errorMsg: null, preset: DEFAULT_PRESET });
   };
 
   /* ---------------- render ---------------- */
@@ -239,7 +282,6 @@ class Creator {
 
     const activeStepLabel = (STEP_META.find((m) => m.n === s.step) || {}).label || '';
     const progressPct = Math.round((s.step / STEP_META.length) * 100);
-    const cropTransform = `translate(${s.crop.x}px, ${s.crop.y}px) scale(${s.crop.scale})`;
     const dropBorder = s.isDraggingFile ? 'var(--border-brand)' : 'var(--border-default)';
     const dropBg = s.isDraggingFile ? 'var(--caramel-50)' : 'var(--cream-100)';
 
@@ -251,7 +293,18 @@ class Creator {
         <div style="width:100%;text-align:center">
           <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">Upload your photo</h2>
           <p style="font-family:var(--font-body);font-size:15px;color:var(--text-muted);margin:0 0 32px">A clear, front-facing photo works best.</p>
-          ${s.uploadedSrc ? `
+          ${s.cameraOpen ? `
+            <div style="display:flex;flex-direction:column;align-items:center;gap:18px">
+              <div style="position:relative;width:100%;max-width:320px;aspect-ratio:1/1;border-radius:var(--radius-lg);overflow:hidden;background:#111">
+                <video data-camera autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;transform:scaleX(${s.facingMode === 'user' ? -1 : 1})"></video>
+              </div>
+              <div style="display:flex;gap:10px;width:100%;max-width:320px">
+                <button class="btn btn--secondary btn--md" data-act="flipCamera" aria-label="Flip camera" style="flex:0 0 auto">Flip</button>
+                <button class="btn btn--primary btn--lg" data-act="capturePhoto" style="flex:1">Capture</button>
+              </div>
+              <button data-act="stopCamera" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Cancel</button>
+            </div>
+          ` : s.uploadedSrc ? `
             <div style="display:flex;flex-direction:column;align-items:center;gap:24px">
               <div style="width:160px;height:160px;border-radius:50%;overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--border-subtle)">
                 <img src="${s.uploadedSrc}" style="width:100%;height:100%;object-fit:cover;display:block" alt="Your upload">
@@ -260,53 +313,47 @@ class Creator {
               <button data-act="clearUpload" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Choose a different photo</button>
             </div>
           ` : `
-            <div data-dropzone style="padding:48px 32px;border-radius:var(--radius-lg);border:2px dashed ${dropBorder};background:${dropBg};display:flex;flex-direction:column;align-items:center;gap:14px;transition:border-color .15s ease, background .15s ease">
+            <div data-dropzone style="padding:44px 28px;border-radius:var(--radius-lg);border:2px dashed ${dropBorder};background:${dropBg};display:flex;flex-direction:column;align-items:center;gap:14px;transition:border-color .15s ease, background .15s ease">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" style="color:var(--brand)"><path d="M12 16V4M12 4l-5 5M12 4l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
               <div style="font-family:var(--font-body);font-weight:700;font-size:15px;color:var(--text-strong)">Drag &amp; drop your photo here</div>
               <div style="font-family:var(--font-body);font-size:13px;color:var(--text-muted)">or</div>
-              <button class="btn btn--secondary btn--md" data-act="triggerFilePicker">Choose a Photo</button>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+                <button class="btn btn--secondary btn--md" data-act="triggerFilePicker">Choose a Photo</button>
+                <button class="btn btn--primary btn--md" data-act="openCamera" style="display:inline-flex;align-items:center;gap:7px">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2l1-1.6A1 1 0 0 1 8.3 5h7.4a1 1 0 0 1 .8.4L17.5 7h2A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg>
+                  Take a Photo
+                </button>
+              </div>
             </div>
           `}
+          ${s.cameraError ? `<p style="font-family:var(--font-body);font-size:13px;color:var(--text-error);margin:16px 0 0">${s.cameraError}</p>` : ''}
           <input type="file" accept="image/*" data-file-input style="display:none">
           ${s.errorMsg ? `<p style="font-family:var(--font-body);font-size:13px;color:var(--text-error);margin:16px 0 0">${s.errorMsg}</p>` : ''}
         </div>`;
     } else if (s.step === 2) {
-      stepHtml = `
-        <div style="width:100%;text-align:center">
-          <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">Frame your photo</h2>
-          <p style="font-family:var(--font-body);font-size:14px;color:var(--text-muted);margin:0 0 28px">Drag to reposition. Scroll or pinch to zoom.</p>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:20px">
-            <div data-crop-box style="width:260px;height:260px;background:var(--cream-200);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none">
-              <div style="width:230px;height:230px;border-radius:50%;overflow:hidden;position:relative;border:2px solid var(--border-default);box-shadow:var(--shadow-sm)">
-                <img src="${s.uploadedSrc || ''}" draggable="false" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:${cropTransform};transform-origin:center;pointer-events:none;user-select:none" alt="Crop preview">
-              </div>
-            </div>
-            <button class="btn btn--primary btn--lg btn--full" data-act="confirmCrop">Continue</button>
-            <button data-act="resetCrop" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset position</button>
-          </div>
-        </div>`;
-    } else if (s.step === 3) {
       const swatches = STYLE_ORDER.map((p) => {
         const selected = p.key === s.preset;
         const borderColor = selected ? 'var(--border-brand)' : 'var(--border-subtle)';
         const bgColor = selected ? 'var(--caramel-50)' : '#FFFFFF';
         return `
-          <button data-preset="${p.key}" style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 10px;border-radius:var(--radius-md);border:2px solid ${borderColor};background:${bgColor};cursor:pointer">
-            <canvas data-swatch="${p.key}" width="120" height="120" style="width:56px;height:56px;display:block"></canvas>
+          <button data-preset="${p.key}" style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 10px;border-radius:var(--radius-md);border:2px solid ${borderColor};background:${bgColor};cursor:pointer">
+            <canvas data-swatch="${p.key}" width="120" height="120" style="width:50px;height:50px;display:block"></canvas>
             <span style="font-family:var(--font-body);font-size:13px;font-weight:600;color:var(--text-strong)">${p.label}</span>
           </button>`;
       }).join('');
       stepHtml = `
         <div style="width:100%;text-align:center">
-          <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">Choose your ring</h2>
-          <p style="font-family:var(--font-body);font-size:14px;color:var(--text-muted);margin:0 0 28px">Pick a ring style.</p>
-          <div style="background:var(--cream-100);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;display:inline-flex">
-            <canvas data-preview width="1024" height="1024" style="display:block;width:220px;height:220px"></canvas>
+          <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">Frame your photo</h2>
+          <p style="font-family:var(--font-body);font-size:14px;color:var(--text-muted);margin:0 0 20px">Drag to move · pinch to zoom &amp; rotate</p>
+          <div style="background:var(--cream-100);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px;display:inline-flex">
+            <canvas data-preview data-adjust width="1024" height="1024" style="display:block;width:300px;height:300px;max-width:76vw;touch-action:none;cursor:grab"></canvas>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:28px">${swatches}</div>
+          <button data-act="resetCrop" style="display:block;margin:0 auto 22px;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset</button>
+          <div style="font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--text-strong);margin:0 0 12px">Choose your ring</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:24px">${swatches}</div>
           <button class="btn btn--primary btn--lg btn--full" data-act="goNext">Continue</button>
         </div>`;
-    } else if (s.step === 4) {
+    } else if (s.step === 3) {
       stepHtml = `
         <div style="width:100%;text-align:center">
           <div style="width:56px;height:56px;border-radius:50%;background:var(--green-100);display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
@@ -337,7 +384,7 @@ class Creator {
             ${s.step !== 1
               ? `<button data-act="goBack" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:14px;font-weight:600;cursor:pointer;padding:8px 0">← Back</button>`
               : `<div></div>`}
-            <span style="font-family:var(--font-body);font-size:13px;font-weight:600;color:var(--text-muted)">Step ${s.step} of 4 · ${activeStepLabel}</span>
+            <span style="font-family:var(--font-body);font-size:13px;font-weight:600;color:var(--text-muted)">Step ${s.step} of ${STEP_META.length} · ${activeStepLabel}</span>
             <button aria-label="Close" data-act="close" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--surface-card);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-strong);font-size:15px;line-height:1;padding:0;box-shadow:var(--shadow-sm)">✕</button>
           </div>
           <div style="height:4px;background:var(--cream-200);border-radius:999px;overflow:hidden;margin-bottom:32px">
@@ -356,13 +403,18 @@ class Creator {
     const actions = {
       close: this.close, goBack: this.goBack, goNext: this.goNext,
       clearUpload: this.clearUpload, triggerFilePicker: this.triggerFilePicker,
-      confirmCrop: this.confirmCrop, resetCrop: this.resetCrop,
+      resetCrop: this.resetCrop,
       shareOnWhatsApp: this.shareOnWhatsApp, downloadPng: this.downloadPng, resetCreator: this.resetCreator,
+      openCamera: this.openCamera, stopCamera: this.stopCamera, capturePhoto: this.capturePhoto, flipCamera: this.flipCamera,
     };
     this.root.querySelectorAll('[data-act]').forEach((el) => {
       const fn = actions[el.getAttribute('data-act')];
       if (fn) el.addEventListener('click', fn);
     });
+
+    // camera preview — reconnect the live stream after this re-render
+    this.videoEl = this.root.querySelector('[data-camera]');
+    if (this.state.cameraOpen && this.stream) this.attachStream();
 
     // file input + dropzone
     this.fileInputEl = this.root.querySelector('[data-file-input]');
@@ -374,15 +426,19 @@ class Creator {
       dz.addEventListener('dragleave', this.onDragLeave);
     }
 
-    // crop interactions
-    const cropBox = this.root.querySelector('[data-crop-box]');
-    this.cropImgEl = cropBox ? cropBox.querySelector('img') : null;
-    if (cropBox) {
-      cropBox.addEventListener('mousedown', this.onCropPointerDown);
-      cropBox.addEventListener('wheel', this.onCropWheel, { passive: false });
-      cropBox.addEventListener('touchstart', this.onCropTouchStart, { passive: false });
-      cropBox.addEventListener('touchmove', this.onCropTouchMove, { passive: false });
-      cropBox.addEventListener('touchend', this.onCropTouchEnd);
+    // live preview canvas (also the adjust surface on step 2)
+    this.previewCanvasEl = this.root.querySelector('[data-preview]');
+
+    // adjust interactions: drag/pan, wheel-zoom (desktop) + 1-finger pan,
+    // 2-finger pinch-zoom & twist-rotate (touch)
+    const adjustEl = this.root.querySelector('[data-adjust]');
+    if (adjustEl) {
+      adjustEl.addEventListener('mousedown', this.onCropPointerDown);
+      adjustEl.addEventListener('wheel', this.onCropWheel, { passive: false });
+      adjustEl.addEventListener('touchstart', this.onCropTouchStart, { passive: false });
+      adjustEl.addEventListener('touchmove', this.onCropTouchMove, { passive: false });
+      adjustEl.addEventListener('touchend', this.onCropTouchEnd);
+      adjustEl.addEventListener('touchcancel', this.onCropTouchEnd);
     }
 
     // preset swatches
@@ -393,78 +449,11 @@ class Creator {
       Ring.renderKamyaRing(el, { size: 120, styleKey: el.getAttribute('data-swatch'), img: null, silhouette: { bg: '#F3E7DD', fg: '#DCB492', bust: 1 } });
     });
 
-    // preview canvas
-    this.previewCanvasEl = this.root.querySelector('[data-preview]');
     this.renderPreviewCanvas();
   }
 }
 
 /* ---------------- landing bootstrap ---------------- */
-
-function buildHeroAvatars() {
-  const r1 = document.querySelector('[data-hero-row1]');
-  const r2 = document.querySelector('[data-hero-row2]');
-  const all = [];
-  const shadow = 'drop-shadow(0 14px 24px rgba(107,61,5,0.14))';
-
-  const generatedCanvas = (cfg) => {
-    const c = document.createElement('canvas');
-    c.dataset.baseSize = cfg.size;
-    c.style.filter = shadow;
-    c.style.display = 'block';
-    Ring.renderKamyaRing(c, { size: 540, styleKey: cfg.preset, img: null, silhouette: { bg: cfg.bg, fg: cfg.fg, bust: cfg.bust } });
-    return c;
-  };
-
-  const mk = (cfg, row) => {
-    if (cfg.img) {
-      // Try the real design photo first; fall back to a generated avatar on error.
-      // Circular cover-crop centers each example on its ring and hides the
-      // varied source backgrounds (some framed, some transparent cut-outs).
-      const img = new Image();
-      img.alt = 'Kamya member wearing the ring';
-      img.dataset.baseSize = cfg.size;
-      img.style.cssText = `object-fit:cover;border-radius:50%;background:var(--cream-100);display:block;filter:${shadow}`;
-      img.onerror = () => {
-        const c = generatedCanvas(cfg);
-        img.replaceWith(c);
-        all[all.indexOf(img)] = c;
-        sizeHero();
-      };
-      img.src = cfg.img;
-      all.push(img);
-      row.appendChild(img);
-    } else {
-      const c = generatedCanvas(cfg);
-      all.push(c);
-      row.appendChild(c);
-    }
-  };
-
-  HERO_ROW1.forEach((cfg) => mk(cfg, r1));
-  HERO_ROW2.forEach((cfg) => mk(cfg, r2));
-
-  function sizeHero() {
-    // Scale both rows by a single factor so the widest row always fits the
-    // available column width (row 2 with three rings is the widest).
-    const row1W = 240 + 270 + 24;              // 534
-    const row2W = 170 + 190 + 170 + 22 * 2;    // 574
-    const natural = Math.max(row1W, row2W);
-    const container = r1.parentElement;
-    const avail = Math.min(
-      container.clientWidth || 560,
-      document.documentElement.clientWidth - 48
-    );
-    const scale = Math.min(1, avail / natural);
-    all.forEach((el) => {
-      const px = Math.round(Number(el.dataset.baseSize) * scale);
-      el.style.width = px + 'px';
-      el.style.height = px + 'px';
-    });
-  }
-  sizeHero();
-  window.addEventListener('resize', sizeHero);
-}
 
 function buildHowItWorks() {
   const grid = document.querySelector('[data-how-grid]');
@@ -494,7 +483,6 @@ function buildLogoMarks() {
 
 function init() {
   buildLogoMarks();
-  buildHeroAvatars();
   buildHowItWorks();
   const creator = new Creator(document.querySelector('[data-creator-root]'));
   document.querySelectorAll('[data-open-creator]').forEach((b) => b.addEventListener('click', creator.open));
