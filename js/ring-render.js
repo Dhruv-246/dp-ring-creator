@@ -10,9 +10,12 @@ export const STYLE_ORDER = [
 // Ring overlay artwork + the radius (as a fraction of the square) at which each
 // overlay's transparent inner disc ends. Must match how the assets were cut so
 // the photo fills the hole exactly with no gap or overlap.
+// cx/cy/inner are the transparent inner-disc centre and radius as fractions of
+// the (square) overlay — the photo is clipped to this circle and the ring art
+// is drawn on top, so the K badge that dips inward is never cut.
 const RING = {
-  classic: { src: 'assets/classic-ring.png', inner: 0.404 },
-  bold: { src: 'assets/bold-ring.png', inner: 0.384 },
+  classic: { src: 'assets/classic-ring.png', cx: 0.5027, cy: 0.5183, inner: 0.3904 },
+  bold: { src: 'assets/bold-ring.png', cx: 0.5, cy: 0.5, inner: 0.3421 },
 };
 
 const ringCache = {};
@@ -78,8 +81,10 @@ export function renderKamyaRing(canvas, { size, styleKey = 'classic', img, trans
   canvas.width = size;
   canvas.height = size;
   const key = RING[styleKey] ? styleKey : 'classic';
-  const cx = size / 2, cy = size / 2;
-  const innerR = RING[key].inner * size;
+  const meta = RING[key];
+  const cx = (meta.cx != null ? meta.cx : 0.5) * size;
+  const cy = (meta.cy != null ? meta.cy : 0.5) * size;
+  const innerR = meta.inner * size;
   const hasPhoto = img && (img.complete !== false) && ((img.naturalWidth || img.width) > 0);
 
   const paint = () => {
