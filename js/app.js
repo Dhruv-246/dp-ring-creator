@@ -175,7 +175,13 @@ class Creator {
 
   /* --- live adjust inside the ring: pan / pinch-zoom / two-finger rotate --- */
   clampScale = (s) => Math.min(4, Math.max(1, s));
-  dispW = () => (this.previewCanvasEl ? this.previewCanvasEl.getBoundingClientRect().width : 320);
+  dispW = () => (this.adjustCanvasEl ? this.adjustCanvasEl.getBoundingClientRect().width : 320);
+
+  // Route live gesture re-renders: step 1 = square crop, step 2 = ring preview.
+  adjustRender() {
+    if (this.state.step === 1) this.renderCropCanvas();
+    else this.renderPreviewCanvas();
+  }
 
   // Mouse (desktop): drag to pan, wheel to zoom.
   onCropPointerDown = (e) => { this.panStart = { x: e.clientX, y: e.clientY, ox: this.state.adjust.ox, oy: this.state.adjust.oy }; };
@@ -184,15 +190,15 @@ class Creator {
     const w = this.dispW();
     this.state.adjust.ox = this.panStart.ox + (e.clientX - this.panStart.x) / w;
     this.state.adjust.oy = this.panStart.oy + (e.clientY - this.panStart.y) / w;
-    this.renderPreviewCanvas();
+    this.adjustRender();
   }
   onWindowMouseUp() { this.panStart = null; }
   onCropWheel = (e) => {
     e.preventDefault();
     this.state.adjust.scale = this.clampScale(this.state.adjust.scale - e.deltaY * 0.0015);
-    this.renderPreviewCanvas();
+    this.adjustRender();
   };
-  resetCrop = () => { this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 }; this.renderPreviewCanvas(); };
+  resetCrop = () => { this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 }; this.adjustRender(); };
 
   // Touch: 1 finger pans, 2 fingers pinch-zoom AND twist-rotate together.
   touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
@@ -209,12 +215,12 @@ class Creator {
     if (this.touchState.mode === 'multi' && e.touches.length >= 2) {
       a.scale = this.clampScale(this.touchState.scale * (this.touchDist(e.touches) / this.touchState.dist));
       a.rot = this.touchState.rot + (this.touchAngle(e.touches) - this.touchState.ang);
-      this.renderPreviewCanvas();
+      this.adjustRender();
     } else if (this.touchState.mode === 'pan' && e.touches.length === 1) {
       const t = e.touches[0], w = this.dispW();
       a.ox = this.touchState.ox + (t.clientX - this.touchState.x) / w;
       a.oy = this.touchState.oy + (t.clientY - this.touchState.y) / w;
-      this.renderPreviewCanvas();
+      this.adjustRender();
     }
   };
   onCropTouchEnd = (e) => {
@@ -239,6 +245,44 @@ class Creator {
       transform: this.state.adjust,
       silhouette: { bg: '#F3E7DD', fg: '#DCB492', bust: 1 },
     });
+  };
+
+  /* --- step 1: square crop (pan / pinch-zoom / two-finger rotate) --- */
+  renderCropCanvas = () => {
+    const cv = this.adjustCanvasEl;
+    if (!cv || !this.uploadedImgEl) return;
+    const size = 1024;
+    cv.width = size; cv.height = size;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, size, size);
+    const t = this.state.adjust;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, size, size); ctx.clip();
+    ctx.translate(size / 2 + (t.ox || 0) * size, size / 2 + (t.oy || 0) * size);
+    ctx.rotate(t.rot || 0);
+    ctx.scale(t.scale || 1, t.scale || 1);
+    const img = this.uploadedImgEl;
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    // cover the square's DIAGONAL so rotation never exposes empty corners.
+    const box = size * Math.SQRT2;
+    const { dw, dh } = iw / ih > 1 ? { dw: box * iw / ih, dh: box } : { dw: box, dh: box * ih / iw };
+    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    ctx.restore();
+  };
+  // Bake the square crop into the working image, then hand off to step 2 (ring).
+  confirmSquareCrop = () => {
+    const cv = this.adjustCanvasEl;
+    if (!cv) { this.setState({ step: 2 }); return; }
+    const dataUrl = cv.toDataURL('image/png');
+    const img = new Image();
+    img.onload = () => {
+      this.uploadedImgEl = img;                            // step 2 frames this square in the ring
+      this.state.adjust = { ox: 0, oy: 0, scale: 1, rot: 0 }; // reset for the ring step
+      this.setState({ step: 2 });
+    };
+    img.src = dataUrl;
   };
 
   /* --- share / download --- */
@@ -291,8 +335,8 @@ class Creator {
     if (s.step === 1) {
       stepHtml = `
         <div style="width:100%;text-align:center">
-          <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">Upload your photo</h2>
-          <p style="font-family:var(--font-body);font-size:15px;color:var(--text-muted);margin:0 0 32px">A clear, front-facing photo works best.</p>
+          <h2 style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--text-heading);margin:0 0 8px">${(s.uploadedSrc && !s.cameraOpen) ? 'Crop your photo' : 'Upload your photo'}</h2>
+          <p style="font-family:var(--font-body);font-size:15px;color:var(--text-muted);margin:0 0 ${(s.uploadedSrc && !s.cameraOpen) ? '18px' : '32px'}">${(s.uploadedSrc && !s.cameraOpen) ? 'Drag to move · pinch to zoom &amp; rotate' : 'A clear, front-facing photo works best.'}</p>
           ${s.cameraOpen ? `
             <div style="display:flex;flex-direction:column;align-items:center;gap:18px">
               <div style="position:relative;width:100%;max-width:320px;aspect-ratio:1/1;border-radius:var(--radius-lg);overflow:hidden;background:#111">
@@ -305,12 +349,13 @@ class Creator {
               <button data-act="stopCamera" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Cancel</button>
             </div>
           ` : s.uploadedSrc ? `
-            <div style="display:flex;flex-direction:column;align-items:center;gap:24px">
-              <div style="width:160px;height:160px;border-radius:50%;overflow:hidden;box-shadow:var(--shadow-sm);border:1px solid var(--border-subtle)">
-                <img src="${s.uploadedSrc}" style="width:100%;height:100%;object-fit:cover;display:block" alt="Your upload">
+            <div style="width:100%">
+              <div style="background:var(--cream-100);border-radius:var(--radius-lg);padding:14px;margin:0 auto 12px;max-width:320px">
+                <canvas data-adjust width="1024" height="1024" style="display:block;width:100%;height:auto;aspect-ratio:1/1;border-radius:12px;touch-action:none;cursor:grab"></canvas>
               </div>
-              <button class="btn btn--primary btn--lg btn--full" data-act="goNext">Continue</button>
-              <button data-act="clearUpload" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Choose a different photo</button>
+              <button data-act="resetCrop" style="display:block;margin:0 auto 18px;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset</button>
+              <button class="btn btn--primary btn--lg btn--full" data-act="confirmSquareCrop">Continue</button>
+              <button data-act="clearUpload" style="display:block;margin:14px auto 0;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Choose a different photo</button>
             </div>
           ` : `
             <div data-dropzone style="padding:44px 28px;border-radius:var(--radius-lg);border:2px dashed ${dropBorder};background:${dropBg};display:flex;flex-direction:column;align-items:center;gap:14px;transition:border-color .15s ease, background .15s ease">
@@ -403,7 +448,7 @@ class Creator {
     const actions = {
       close: this.close, goBack: this.goBack, goNext: this.goNext,
       clearUpload: this.clearUpload, triggerFilePicker: this.triggerFilePicker,
-      resetCrop: this.resetCrop,
+      resetCrop: this.resetCrop, confirmSquareCrop: this.confirmSquareCrop,
       shareOnWhatsApp: this.shareOnWhatsApp, downloadPng: this.downloadPng, resetCreator: this.resetCreator,
       openCamera: this.openCamera, stopCamera: this.stopCamera, capturePhoto: this.capturePhoto, flipCamera: this.flipCamera,
     };
@@ -432,6 +477,7 @@ class Creator {
     // adjust interactions: drag/pan, wheel-zoom (desktop) + 1-finger pan,
     // 2-finger pinch-zoom & twist-rotate (touch)
     const adjustEl = this.root.querySelector('[data-adjust]');
+    this.adjustCanvasEl = adjustEl;
     if (adjustEl) {
       adjustEl.addEventListener('mousedown', this.onCropPointerDown);
       adjustEl.addEventListener('wheel', this.onCropWheel, { passive: false });
@@ -449,7 +495,7 @@ class Creator {
       Ring.renderKamyaRing(el, { size: 120, styleKey: el.getAttribute('data-swatch'), img: null, silhouette: { bg: '#F3E7DD', fg: '#DCB492', bust: 1 } });
     });
 
-    this.renderPreviewCanvas();
+    this.adjustRender();
   }
 }
 
