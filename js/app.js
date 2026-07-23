@@ -1,4 +1,4 @@
-import * as Ring from './ring-render.js?v=8';
+import * as Ring from './ring-render.js?v=11';
 
 /* ---------------- static config (ported from the design) ---------------- */
 

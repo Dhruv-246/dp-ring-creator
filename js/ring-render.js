@@ -15,7 +15,7 @@ export const STYLE_ORDER = [
 // is drawn on top, so the K badge that dips inward is never cut.
 const RING = {
   classic: { src: 'assets/classic-ring.png?v=4', cx: 0.5, cy: 0.5, inner: 0.400 },
-  bold: { src: 'assets/bold-ring.png?v=3', cx: 0.5, cy: 0.5, inner: 0.384 },
+  bold: { src: 'assets/bold-ring.png?v=6', cx: 0.5, cy: 0.5, inner: 0.384 },
 };
 
 const ringCache = {};
