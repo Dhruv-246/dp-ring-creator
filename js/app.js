@@ -518,8 +518,7 @@ class Creator {
                   Rotate
                 </button>
               </div>
-              <button class="btn btn--primary btn--lg btn--full" data-act="confirmSquareCrop">Continue</button>
-              <div style="display:flex;justify-content:center;gap:22px;margin-top:14px">
+              <div style="display:flex;justify-content:center;gap:22px;margin-top:6px">
                 <button data-act="resetCrop" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset</button>
                 <button data-act="clearUpload" style="background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Choose a different photo</button>
               </div>
@@ -562,8 +561,7 @@ class Creator {
           </div>
           <button data-act="resetCrop" style="display:block;margin:0 auto 22px;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;padding:0;text-decoration:underline">Reset</button>
           <div style="font-family:var(--font-body);font-size:13px;font-weight:700;color:var(--text-strong);margin:0 0 12px">Choose your ring</div>
-          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:24px">${swatches}</div>
-          <button class="btn btn--primary btn--lg btn--full" data-act="goNext">Continue</button>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">${swatches}</div>
         </div>`;
     } else if (s.step === 3) {
       stepHtml = `
@@ -589,23 +587,36 @@ class Creator {
 
     const fadeCss = this._justOpened ? 'animation:dcFadeIn .22s ease;' : '';
     this._justOpened = false;
+
+    // Primary CTA lives in a sticky footer so it's always visible without scrolling.
+    let footerHtml = '';
+    if (s.step === 1 && s.uploadedSrc && !s.cameraOpen)
+      footerHtml = `<button class="btn btn--primary btn--lg btn--full" data-act="confirmSquareCrop">Continue</button>`;
+    else if (s.step === 2)
+      footerHtml = `<button class="btn btn--primary btn--lg btn--full" data-act="goNext">Continue</button>`;
+
     this.root.innerHTML = `
-      <div style="position:fixed;inset:0;background:var(--cream-100);z-index:1000;overflow-y:auto;overscroll-behavior:contain;${fadeCss}">
-        <div style="max-width:640px;margin:0 auto;padding:28px 24px 80px;min-height:100%;display:flex;flex-direction:column">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div style="position:fixed;inset:0;background:var(--cream-100);z-index:1000;display:flex;flex-direction:column;overscroll-behavior:contain;${fadeCss}">
+        <div style="flex:0 0 auto;width:100%;max-width:640px;margin:0 auto;padding:24px 24px 0">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
             ${s.step !== 1
               ? `<button data-act="goBack" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--text-muted);font-family:var(--font-body);font-size:14px;font-weight:600;cursor:pointer;padding:8px 0">← Back</button>`
               : `<div></div>`}
             <span style="font-family:var(--font-body);font-size:13px;font-weight:600;color:var(--text-muted)">Step ${s.step} of ${STEP_META.length} · ${activeStepLabel}</span>
             <button aria-label="Close" data-act="close" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--surface-card);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-strong);font-size:15px;line-height:1;padding:0;box-shadow:var(--shadow-sm)">✕</button>
           </div>
-          <div style="height:4px;background:var(--cream-200);border-radius:999px;overflow:hidden;margin-bottom:32px">
+          <div style="height:4px;background:var(--cream-200);border-radius:999px;overflow:hidden">
             <div style="height:100%;background:var(--brand);border-radius:999px;width:${progressPct}%;transition:width .3s ease"></div>
           </div>
-          <div style="flex:1;display:flex;flex-direction:column">
+        </div>
+        <div style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain">
+          <div style="width:100%;max-width:640px;margin:0 auto;padding:20px 24px 24px;display:flex;flex-direction:column">
             ${cardOpen}${stepHtml}</div>
           </div>
         </div>
+        ${footerHtml ? `<div style="flex:0 0 auto;background:var(--cream-100);border-top:1px solid var(--border-subtle);padding:14px 24px calc(14px + env(safe-area-inset-bottom))">
+          <div style="width:100%;max-width:640px;margin:0 auto">${footerHtml}</div>
+        </div>` : ''}
       </div>`;
 
     this.wire();
