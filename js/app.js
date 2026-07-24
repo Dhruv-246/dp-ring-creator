@@ -109,6 +109,7 @@ class Creator {
       img.onload = () => {
         this.originalImgEl = img;                          // kept intact for re-cropping on "Back"
         this.uploadedImgEl = img;
+        this._cropWorkImg = null;                          // regenerate downscaled editor copy
         this.crop = { rot90: 0, freeRot: 0, box: null };   // fresh crop for the new photo
         this.setState({ uploadedSrc: src, errorMsg: null, adjust: { ox: 0, oy: 0, scale: 1, rot: 0 } });
       };
@@ -123,7 +124,7 @@ class Creator {
   onDragOver = (e) => { e.preventDefault(); if (!this.state.isDraggingFile) this.setState({ isDraggingFile: true }); };
   onDragLeave = (e) => { e.preventDefault(); this.setState({ isDraggingFile: false }); };
   triggerFilePicker = () => { if (this.fileInputEl) this.fileInputEl.click(); };
-  clearUpload = () => { this.uploadedImgEl = null; this.originalImgEl = null; this.crop = { rot90: 0, freeRot: 0, box: null }; this.setState({ uploadedSrc: null, errorMsg: null }); };
+  clearUpload = () => { this.uploadedImgEl = null; this.originalImgEl = null; this._cropWorkImg = null; this.crop = { rot90: 0, freeRot: 0, box: null }; this.setState({ uploadedSrc: null, errorMsg: null }); };
 
   /* --- camera capture --- */
   attachStream() {
@@ -306,11 +307,30 @@ class Creator {
     if (this._cropRaf) return;
     this._cropRaf = requestAnimationFrame(() => { this._cropRaf = null; this.drawCropStage(); this.positionCropBox(); });
   }
-  drawCropStage() {
+  // Render the scaled+rotated photo ONCE into an offscreen canvas. This is the
+  // only expensive step (downscaling a multi-MP photo); it runs on setup and on
+  // rotation — never during resize/move, which just re-blit this cache.
+  // Downscaled copy of the photo used ONLY for editor display, so rotating a
+  // multi-MP photo stays fast. Full-res original is still used for the final crop.
+  makeCropWorkImg() {
+    const img = this.originalImgEl;
+    if (!img) return;
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const maxD = 1400, sc = Math.min(1, maxD / Math.max(iw, ih));
+    const w = Math.max(1, Math.round(iw * sc)), h = Math.max(1, Math.round(ih * sc));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    this._cropWorkImg = cv;
+  }
+  renderCropBase() {
     const cv = this.cropCanvasEl, c = this.crop, img = this.originalImgEl;
     if (!cv || !img) return;
-    const ctx = cv.getContext('2d');
-    const dpr = cv.width / c.vw || 2;             // backing store sized once in setupCropper
+    if (!this._cropWorkImg) this.makeCropWorkImg();
+    const src = this._cropWorkImg || img;
+    const off = this._cropBase || (this._cropBase = document.createElement('canvas'));
+    off.width = cv.width; off.height = cv.height;
+    const dpr = cv.width / c.vw || 2;
+    const ctx = off.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, c.vw, c.vh);
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
@@ -318,10 +338,20 @@ class Creator {
     ctx.translate(c.vw / 2, c.vh / 2);
     ctx.rotate(c.rot90 * Math.PI / 2 + c.freeRot);
     ctx.scale(c.fit, c.fit);
-    ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+    ctx.drawImage(src, -iw / 2, -ih / 2, iw, ih);   // src stretched to original footprint
     ctx.restore();
-    // Dim everything outside the crop box (drawn on canvas — cheap, avoids a
-    // giant animated box-shadow that repaints the whole stage every frame).
+  }
+  // Runs every animation frame during move/resize — just blits the cached photo
+  // and paints the dim rectangles. No photo downscaling here → smooth.
+  drawCropStage() {
+    const cv = this.cropCanvasEl, c = this.crop;
+    if (!cv || !this._cropBase) return;
+    const ctx = cv.getContext('2d');
+    const dpr = cv.width / c.vw || 2;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(this._cropBase, 0, 0);          // fast same-size blit
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const b = c.box;
     if (b) {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
@@ -350,6 +380,7 @@ class Creator {
     this.cropCanvasEl.height = Math.round(r.height * dpr);
     this.computeImgFit();
     if (!this.crop.box) this.resetCropBox(); else this.clampCropBox();
+    this.renderCropBase();
     this.drawCropStage();
     this.positionCropBox();
     this.cropBoxEl.addEventListener('pointerdown', this.onCropBoxDown);
@@ -390,7 +421,7 @@ class Creator {
   onCropDocUp() { this.cropDrag = null; }
   rotate90 = () => {
     this.crop.rot90 = (this.crop.rot90 + 1) % 4;
-    this.computeImgFit(); this.clampCropBox(); this.scheduleCropDraw();
+    this.computeImgFit(); this.renderCropBase(); this.clampCropBox(); this.scheduleCropDraw();
   };
   onCropTwoStart = (e) => {
     if (e.touches.length < 2) return;
@@ -403,7 +434,7 @@ class Creator {
     e.preventDefault();
     const a = Math.atan2(e.touches[1].clientY - e.touches[0].clientY, e.touches[1].clientX - e.touches[0].clientX);
     this.crop.freeRot = this.cropTwo.rot + (a - this.cropTwo.ang);
-    this.computeImgFit(); this.clampCropBox(); this.scheduleCropDraw();
+    this.computeImgFit(); this.renderCropBase(); this.clampCropBox(); this.scheduleCropDraw();
   };
   onCropTwoEnd = (e) => { if (!e.touches || e.touches.length < 2) this.cropTwo = null; };
   // Bake the selected square region into the working image → step 2 (ring).
