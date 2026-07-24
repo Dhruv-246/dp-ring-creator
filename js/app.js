@@ -1,4 +1,4 @@
-import * as Ring from './ring-render.js?v=11';
+import * as Ring from './ring-render.js?v=12';
 
 /* ---------------- static config (ported from the design) ---------------- */
 
@@ -25,7 +25,7 @@ const HOW_ICONS = {
   share: '<path d="M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 6l-4-4-4 4M12 2v13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 
-const DEFAULT_PRESET = 'bold';
+const DEFAULT_PRESET = 'classic';
 
 /* ---------------- component ---------------- */
 

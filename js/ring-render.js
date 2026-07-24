@@ -14,8 +14,8 @@ export const STYLE_ORDER = [
 // the (square) overlay — the photo is clipped to this circle and the ring art
 // is drawn on top, so the K badge that dips inward is never cut.
 const RING = {
-  classic: { src: 'assets/classic-ring.png?v=4', cx: 0.5, cy: 0.5, inner: 0.400 },
-  bold: { src: 'assets/bold-ring.png?v=6', cx: 0.5, cy: 0.5, inner: 0.384 },
+  classic: { src: 'assets/classic-ring.png?v=5', cx: 0.5007, cy: 0.4693, inner: 0.431 },
+  bold: { src: 'assets/bold-ring.png?v=7', cx: 0.5003, cy: 0.4676, inner: 0.431 },
 };
 
 const ringCache = {};
